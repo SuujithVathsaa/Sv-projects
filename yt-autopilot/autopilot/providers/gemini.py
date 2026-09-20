@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import struct
 import time
@@ -25,12 +26,22 @@ _RETRYABLE = ("503", "502", "500", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "
 _DAILY_QUOTA = re.compile(r"per.?day|requests?_per_day|daily.{0,12}limit", re.IGNORECASE)
 
 
+# The SDK logs an automatic-function-calling recommendation on every
+# generate_content call. This pipeline never uses function calling, so the
+# notice is noise that buries real errors in the run log.
+logging.getLogger("google_genai.models").setLevel(logging.ERROR)
+
+
 class GeminiError(RuntimeError):
     """A Gemini call failed in a way retrying will not fix."""
 
 
 class DailyQuotaExhausted(GeminiError):
     """The free tier's daily allowance for this model is gone until it resets."""
+
+
+class ModelOverloaded(GeminiError):
+    """This model kept returning 503/429. A different model may still answer."""
 
 
 class Gemini:
@@ -43,6 +54,32 @@ class Gemini:
         self.client = genai.Client(api_key=api_key)
         self.models = models
         self.max_retries = max_retries
+
+    # -- model fallback ----------------------------------------------------
+    def _attempt(self, role: str, build, what: str):
+        """Run `build(model)` against each candidate for a role in turn.
+
+        Discovery ranks the newest model first, which is also the one under the
+        most load — on the free tier it answers 503 exactly when everyone else
+        is using it. Retrying a saturated model cannot help, so once its
+        attempts are spent the next-best model is tried instead.
+        """
+        candidates = self.models.candidates(role)
+        last: Exception | None = None
+        for index, model in enumerate(candidates):
+            try:
+                return self._call(lambda m=model: build(m), f"{what} ({model})")
+            except ModelOverloaded as exc:
+                last = exc
+                remaining = candidates[index + 1:]
+                if remaining:
+                    print(f"    {model} is overloaded — switching to {remaining[0]}")
+        raise ModelOverloaded(
+            f"{what} failed: every candidate model was overloaded "
+            f"({', '.join(candidates)}).\n"
+            f"  Gemini is busy right now, not misconfigured. The run is saved —\n"
+            f"  `python -m autopilot resume` picks it up when demand drops."
+        ) from last
 
     # -- retry -------------------------------------------------------------
     def _call(self, fn, what: str):
@@ -69,16 +106,18 @@ class Gemini:
                     print(f"    transient error on {what}, retrying in {delay:.0f}s")
                     time.sleep(delay)
                     delay *= 2
-        raise GeminiError(f"{what} failed after {self.max_retries} attempts — {last}")
+        raise ModelOverloaded(
+            f"{what} failed after {self.max_retries} attempts — {last}"
+        )
 
     # -- text --------------------------------------------------------------
     def json(self, prompt: str, *, temperature: float = 1.0) -> dict[str, Any]:
         """Generate and parse a JSON object."""
         from google.genai import types
 
-        def run():
+        def run(model: str):
             return self.client.models.generate_content(
-                model=self.models.text,
+                model=model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=temperature,
@@ -86,7 +125,7 @@ class Gemini:
                 ),
             )
 
-        response = self._call(run, "text generation")
+        response = self._attempt("text", run, "text generation")
         raw = (response.text or "").strip()
         try:
             return json.loads(raw)
@@ -104,9 +143,9 @@ class Gemini:
 
         prompt = f"{style}\n\n{text}".strip() if style else text
 
-        def run():
+        def run(model: str):
             return self.client.models.generate_content(
-                model=self.models.tts,
+                model=model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_modalities=["AUDIO"],
@@ -120,7 +159,7 @@ class Gemini:
                 ),
             )
 
-        response = self._call(run, "speech synthesis")
+        response = self._attempt("tts", run, "speech synthesis")
         pcm = self._first_inline(response, "audio")
         if pcm is None:
             raise GeminiError(
@@ -141,9 +180,9 @@ class Gemini:
         """Generate one image. `pro` selects the tier that renders text legibly."""
         from google.genai import types
 
-        model = self.models.image_pro if pro else self.models.image
+        role = "image_pro" if pro else "image"
 
-        def run():
+        def run(model: str):
             return self.client.models.generate_content(
                 model=model,
                 contents=prompt,
@@ -152,11 +191,11 @@ class Gemini:
                 ),
             )
 
-        response = self._call(run, "image generation")
+        response = self._attempt(role, run, "image generation")
         data = self._first_inline(response, "image")
         if data is None:
             raise GeminiError(
-                f"Image model {model} returned no image. The prompt may have been "
+                f"The {role} model returned no image. The prompt may have been "
                 f"blocked by a safety filter — try rewording the scene description."
             )
         out_path.parent.mkdir(parents=True, exist_ok=True)

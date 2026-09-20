@@ -199,6 +199,11 @@ below 390px from the bottom is clamped automatically, and you'll see a warning.
 midnight Pacific; `python -m autopilot resume` picks the run back up. Check
 `voice_over.batch` is `true`.
 
+**`every candidate model was overloaded`** — Gemini is busy, not broken. The
+pipeline already tried three different models. Wait a few minutes and run
+`python -m autopilot resume`; the run is saved and picks up where it stopped.
+Newer models (the default first pick) are busiest at peak times.
+
 **`ffmpeg failed`** — run with `--traceback` for the full error. The most common
 cause is a generated image that failed to download; re-run `stage visuals`.
 

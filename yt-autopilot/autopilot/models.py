@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .config import MODEL_CACHE
 
@@ -111,23 +111,38 @@ def _score(name: str, actions: list[str], role: str) -> float:
     )
 
 
+# How many models to keep per role. The newest model is also the one everyone
+# else is hitting, so the first choice is the likeliest to answer 503. Keeping
+# ranked alternates lets a saturated model be stepped over instead of retried.
+CANDIDATES_PER_ROLE = 3
+
+
 @dataclass
 class ModelSet:
-    """The model id chosen for each role."""
+    """The model chosen for each role, plus ranked alternates to fall back on."""
 
     text: str
     tts: str
     image: str
     image_pro: str
     discovered: bool = False
+    alternates: dict[str, list[str]] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, str]:
         return {r: getattr(self, r) for r in ROLES}
 
+    def candidates(self, role: str) -> list[str]:
+        """The preferred model for a role, then its fallbacks."""
+        return [getattr(self, role), *self.alternates.get(role, [])]
+
     def __str__(self) -> str:
         source = "discovered" if self.discovered else "fallback"
-        rows = "\n".join(f"    {r:<10} {getattr(self, r)}" for r in ROLES)
-        return f"  models ({source}):\n{rows}"
+        rows = []
+        for r in ROLES:
+            spare = self.alternates.get(r, [])
+            tail = f"   (else: {', '.join(spare)})" if spare else ""
+            rows.append(f"    {r:<10} {getattr(self, r)}{tail}")
+        return f"  models ({source}):\n" + "\n".join(rows)
 
 
 def _available(api_key: str) -> list[tuple[str, list[str]]]:
@@ -149,7 +164,11 @@ def discover(api_key: str, refresh: bool = False) -> ModelSet:
         try:
             cached = json.loads(MODEL_CACHE.read_text())
             if all(cached.get(r) for r in ROLES):
-                return ModelSet(**{r: cached[r] for r in ROLES}, discovered=True)
+                return ModelSet(
+                    **{r: cached[r] for r in ROLES},
+                    discovered=True,
+                    alternates=cached.get("alternates", {}),
+                )
         except (json.JSONDecodeError, TypeError):
             pass  # Corrupt cache is not worth failing over; re-discover.
 
@@ -161,17 +180,23 @@ def discover(api_key: str, refresh: bool = False) -> ModelSet:
         return ModelSet(**FALLBACKS)
 
     chosen: dict[str, str] = {}
+    alternates: dict[str, list[str]] = {}
     for role in ROLES:
-        ranked = sorted(
-            ((n, _score(n, a, role)) for n, a in catalog),
-            key=lambda pair: pair[1],
-            reverse=True,
-        )
-        if ranked and ranked[0][1] > 0:
-            chosen[role] = ranked[0][0]
+        ranked = [
+            n for n, score in sorted(
+                ((n, _score(n, a, role)) for n, a in catalog),
+                key=lambda pair: pair[1],
+                reverse=True,
+            )
+            if score > 0
+        ]
+        if ranked:
+            chosen[role] = ranked[0]
+            alternates[role] = ranked[1:CANDIDATES_PER_ROLE]
         else:
             chosen[role] = FALLBACKS[role]
+            alternates[role] = []
             print(f"  ! no model matched role '{role}'; using {FALLBACKS[role]}")
 
-    MODEL_CACHE.write_text(json.dumps(chosen, indent=2))
-    return ModelSet(**chosen, discovered=True)
+    MODEL_CACHE.write_text(json.dumps({**chosen, "alternates": alternates}, indent=2))
+    return ModelSet(**chosen, discovered=True, alternates=alternates)
