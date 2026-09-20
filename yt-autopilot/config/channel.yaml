@@ -31,6 +31,13 @@ voice_over:
   style: "measured documentary narration, natural pauses, no sing-song rhythm"
   speaking_rate: 1.0
 
+  # true  = one TTS request for the whole script. Beat timings are measured from
+  #         the pauses in the audio. The free Gemini tier allows 15 TTS requests
+  #         a day, so this is 15 videos/day.
+  # false = one request per beat. Exact timings, but 6 requests per video, so
+  #         only 2 videos/day on the free tier. Use it once you are on billing.
+  batch: true
+
 visuals:
   # Visual treatment applied to every generated image. Keep this consistent —
   # it's what makes your channel recognisable at a glance.

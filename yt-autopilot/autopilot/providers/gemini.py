@@ -19,9 +19,18 @@ TTS_SAMPLE_WIDTH = 2
 
 _RETRYABLE = ("503", "502", "500", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "overloaded")
 
+# A per-minute limit clears on its own; a per-day one does not. Retrying a spent
+# daily quota just burns four backoff delays and then fails obscurely, so the two
+# are told apart by the quota id Google returns in the error.
+_DAILY_QUOTA = re.compile(r"per.?day|requests?_per_day|daily.{0,12}limit", re.IGNORECASE)
+
 
 class GeminiError(RuntimeError):
     """A Gemini call failed in a way retrying will not fix."""
+
+
+class DailyQuotaExhausted(GeminiError):
+    """The free tier's daily allowance for this model is gone until it resets."""
 
 
 class Gemini:
@@ -46,6 +55,14 @@ class Gemini:
             except Exception as exc:  # SDK raises a variety of error classes
                 last = exc
                 text = f"{type(exc).__name__}: {exc}"
+                if _DAILY_QUOTA.search(text):
+                    raise DailyQuotaExhausted(
+                        f"{what} hit the daily free-tier quota.\n"
+                        f"  It resets at midnight Pacific.\n"
+                        f"  Free-tier TTS allows 15 requests a day, which is 15 videos\n"
+                        f"  in batch mode or 2 with `voice_over.batch: false`.\n"
+                        f"  The run is saved — `python -m autopilot resume` continues it."
+                    ) from exc
                 if not any(token in text for token in _RETRYABLE):
                     raise GeminiError(f"{what} failed — {text}") from exc
                 if attempt < self.max_retries - 1:

@@ -194,13 +194,16 @@ def run(ctx: Context) -> None:
     silent = state.path("segments", "video.mp4")
     _concat(segments, silent, state.path("segments", "video.txt"), ["-c", "copy"])
 
-    narration = state.path("audio", "narration.wav")
-    _concat(
-        [Path(c["audio"]) for c in clips],
-        narration,
-        state.path("audio", "audio.txt"),
-        ["-c", "copy"],
-    )
+    # Batch mode leaves every beat pointing at one shared narration file; only
+    # per-beat mode produces separate files that need joining. Concatenating the
+    # shared file once per beat would repeat the whole narration.
+    sources = [Path(c["audio"]) for c in clips]
+    unique = list(dict.fromkeys(sources))
+    if len(unique) == 1:
+        narration = unique[0]
+    else:
+        narration = state.path("audio", "narration.wav")
+        _concat(sources, narration, state.path("audio", "audio.txt"), ["-c", "copy"])
 
     # 3. Mux, burn captions, encode to the Shorts spec.
     final = state.path("output", "video.mp4")

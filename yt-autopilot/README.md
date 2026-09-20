@@ -25,7 +25,12 @@ FFmpeg comes bundled via `imageio-ffmpeg` — nothing to install by hand.
 
 ### 2. Gemini key (required)
 
-Get one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+Get a **free** key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+No credit card.
+
+> **A Gemini Pro / Google AI Pro subscription is not API access.** That is a
+> consumer chat product; its Veo allowance lives in the Flow web UI and no
+> script can authenticate against it. The API key above is separate, and free.
 
 ```bash
 cp .env.example .env
@@ -55,9 +60,16 @@ cp .env.local.example .env.local
 
 Then set `visuals.use_higgsfield: true` in `config/channel.yaml`.
 
-> **Not yet verified against the live API.** It was built from the official
-> SDK but could not be run from the environment it was written in. Check it
-> works before relying on it: `python main.py` should print a video URL.
+> **A free Higgsfield plan cannot generate anything.** Tested against a live
+> free account with 10 credits: the API refuses with
+> `Requires basic plan or higher`, before credits are even consulted. Credits
+> alone are not enough — you need at least a Basic plan for any generation to
+> run, through the SDK or otherwise.
+>
+> **The SDK path is also unverified against the live API.** It was written from
+> the official SDK but could not be run from the environment it was built in.
+> Once you are on a paid plan, check it with `python main.py`, which should
+> print a video URL.
 
 **`.env` and `.env.local` are gitignored. Never paste either into a chat.**
 
@@ -104,6 +116,24 @@ Prompt templates live in `config/prompts/` and are plain Markdown — edit them
 to change how scripts get written.
 
 ---
+
+## Free tier
+
+Everything runs on Gemini's free tier. One quota binds before the others:
+
+| Quota | Free limit | Used per video | Ceiling |
+|---|---|---|---|
+| **TTS** | **15 req/day** | 1 (batch mode) | **15 videos/day** |
+| Images | ~500 req/day | 7 | ~71 videos/day |
+| Text | ~1,500 req/day | ~3 | not binding |
+
+`voice_over.batch: true` (the default) sends one TTS request per video. Setting
+it to `false` sends one per beat — exact timings, but it drops you to about
+2 videos/day. Switch it off once you are on billing.
+
+Hitting the daily cap stops the run with a clear message rather than retrying;
+the run is saved, so `resume` continues it after the quota resets at midnight
+Pacific.
 
 ## Cost
 
@@ -164,6 +194,10 @@ script stage. Raise `originality.max_regenerations`, or pick a different angle.
 
 **Captions hidden behind the YouTube UI** — lower `captions.position`. Anything
 below 390px from the bottom is clamped automatically, and you'll see a warning.
+
+**`hit the daily free-tier quota`** — expected on the free tier. Resets at
+midnight Pacific; `python -m autopilot resume` picks the run back up. Check
+`voice_over.batch` is `true`.
 
 **`ffmpeg failed`** — run with `--traceback` for the full error. The most common
 cause is a generated image that failed to download; re-run `stage visuals`.
