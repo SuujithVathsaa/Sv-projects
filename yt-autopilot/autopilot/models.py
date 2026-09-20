@@ -22,11 +22,13 @@ from .config import MODEL_CACHE
 ROLES = ("text", "tts", "image", "image_pro")
 
 # Used only when discovery fails outright (offline, bad key, API change).
+# Checked against the live catalogue. `gemini-flash-latest` is an alias Google
+# repoints, so it is the safest text fallback; the rest prefer stable ids.
 FALLBACKS = {
     "text": "gemini-flash-latest",
-    "tts": "gemini-2.5-flash-preview-tts",
-    "image": "gemini-2.5-flash-image",
-    "image_pro": "gemini-3-pro-image-preview",
+    "tts": "gemini-3.1-flash-tts-preview",
+    "image": "gemini-3.1-flash-image",
+    "image_pro": "gemini-3-pro-image",
 }
 
 # Never select these for any role.
@@ -34,6 +36,12 @@ _EXCLUDE = re.compile(
     r"embedding|aqa|imagen|veo|learnlm|gemma|live|native-audio|realtime|robotics"
 )
 _VERSION = re.compile(r"(\d+(?:[.-]\d+)?)")
+_UNSTABLE = re.compile(r"preview|-exp\b|experimental")
+
+# Smaller than the 0.1 gap between adjacent versions, so a newer model still wins
+# and the penalty only breaks ties between a model and its own preview twin.
+# Preview tiers carry tighter rate limits and can be withdrawn without notice.
+_PREVIEW_PENALTY = 0.05
 
 
 def _version_score(name: str) -> float:
@@ -62,20 +70,34 @@ def _score(name: str, actions: list[str], role: str) -> float:
     if role == "tts":
         if not is_tts:
             return -1.0
-        # Cheapest capable tier wins.
-        return 100 + _version_score(n) + (5 if is_flash else 0) - (10 if is_pro else 0)
+        # Cheapest capable tier wins. The penalty is deliberately tiny: every TTS
+        # model in the catalogue is preview-only, so this must not disqualify them.
+        return (
+            100 + _version_score(n) + (5 if is_flash else 0) - (10 if is_pro else 0)
+            - (_PREVIEW_PENALTY if _UNSTABLE.search(n) else 0)
+        )
 
     if role == "image":
         if not is_image or is_tts:
             return -1.0
-        # The cheap tier: flash, explicitly not pro.
-        return 100 + _version_score(n) + (10 if is_flash else 0) - (20 if is_pro else 0)
+        # The cheap tier: flash, explicitly not pro. Lite is cheaper still but
+        # visibly weaker, and without this it ties its non-lite sibling exactly.
+        return (
+            100 + _version_score(n)
+            + (10 if is_flash else 0)
+            - (20 if is_pro else 0)
+            - (5 if is_lite else 0)
+            - (_PREVIEW_PENALTY if _UNSTABLE.search(n) else 0)
+        )
 
     if role == "image_pro":
         if not is_image or is_tts:
             return -1.0
         # Pro renders legible text, which is what a thumbnail needs.
-        return 100 + _version_score(n) + (20 if is_pro else 0)
+        return (
+            100 + _version_score(n) + (20 if is_pro else 0)
+            - (_PREVIEW_PENALTY if _UNSTABLE.search(n) else 0)
+        )
 
     # role == "text"
     if is_tts or is_image:
@@ -83,7 +105,10 @@ def _score(name: str, actions: list[str], role: str) -> float:
     if actions and "generateContent" not in actions:
         return -1.0
     # Flash is the cost/quality sweet spot; lite writes noticeably flatter scripts.
-    return 100 + _version_score(n) + (10 if is_flash else 0) - (15 if is_lite else 0)
+    return (
+        100 + _version_score(n) + (10 if is_flash else 0) - (15 if is_lite else 0)
+        - (_PREVIEW_PENALTY if _UNSTABLE.search(n) else 0)
+    )
 
 
 @dataclass
