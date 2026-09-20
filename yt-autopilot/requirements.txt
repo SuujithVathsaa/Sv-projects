@@ -1,0 +1,15 @@
+# Core AI + Google APIs
+google-genai>=1.0.0
+google-api-python-client>=2.140.0
+google-auth-oauthlib>=1.2.0
+google-auth-httplib2>=0.2.0
+
+# Higgsfield (optional) — generated video for the hook beat
+higgsfield-client>=0.2.0
+
+# Config + env
+PyYAML>=6.0
+python-dotenv>=1.0.0
+
+# Bundled FFmpeg binary so no system install is needed
+imageio-ffmpeg>=0.5.1

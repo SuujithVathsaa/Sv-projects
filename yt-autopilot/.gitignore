@@ -1,0 +1,23 @@
+# Secrets — never commit these
+.env
+.env.local
+.env.*.local
+client_secret*.json
+token.json
+config/models.cache.json
+
+# Per-video working dirs and generated media
+runs/
+*.wav
+*.mp4
+*.png
+*.jpg
+
+# Local state
+ledger.db
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
