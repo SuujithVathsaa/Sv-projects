@@ -1,0 +1,98 @@
+# ============================================================
+#  Your channel's settings. This is the main file you edit.
+#  Everything else runs off what you put here.
+# ============================================================
+
+channel:
+  # What your channel is about. Be specific — "space" is too broad,
+  # "strange facts about deep ocean creatures" gives far better scripts.
+  niche: "little-known engineering failures and what they taught us"
+
+  # Who you're talking to. Shapes vocabulary and assumed knowledge.
+  audience: "curious adults who like documentaries but have short attention spans"
+
+  # The channel's personality. This is the single biggest lever on
+  # whether your videos feel human or feel like AI filler.
+  voice: "calm, precise, slightly dry. Explains without talking down. No hype words."
+
+  # Language for script and metadata.
+  language: "en"
+
+format:
+  # 'short' = 1080x1920 vertical. 'long' is scaffolded but not built yet.
+  profile: "short"
+  target_seconds: 45        # 15-180. Under 60 is the safest place to start.
+  beats: 6                  # Scenes in the video. More beats = more images = more cost.
+
+voice_over:
+  # Run `python -m autopilot voices` to hear what's available.
+  voice_name: "Charon"
+  # Instructions passed to the TTS model to shape delivery.
+  style: "measured documentary narration, natural pauses, no sing-song rhythm"
+  speaking_rate: 1.0
+
+  # true  = one TTS request for the whole script. Beat timings are measured from
+  #         the pauses in the audio. The free Gemini tier allows 15 TTS requests
+  #         a day, so this is 15 videos/day.
+  # false = one request per beat. Exact timings, but 6 requests per video, so
+  #         only 2 videos/day on the free tier. Use it once you are on billing.
+  batch: true
+
+visuals:
+  # Visual treatment applied to every generated image. Keep this consistent —
+  # it's what makes your channel recognisable at a glance.
+  style: "muted cinematic photography, shallow depth of field, cool desaturated palette, film grain"
+  aspect: "9:16"
+
+  # Ken Burns motion. This is what turns still images into something that
+  # reads as video. Off means static images, which look noticeably worse.
+  ken_burns: true
+  zoom_max: 1.12            # 1.0 = no zoom. Above ~1.2 starts to feel seasick.
+
+  # --- Higgsfield (optional, costs money) ---
+  # false  = every scene is a still image. Cheapest. Start here.
+  # true   = the hook scene becomes real generated video via Higgsfield.
+  use_higgsfield: false
+  higgsfield_model: "bytedance/seedance-2.5/text-to-video"
+  higgsfield_scope: "hook"  # 'hook' = first beat only. 'all' gets expensive fast.
+
+captions:
+  # Burned-in captions. Most Shorts are watched muted — leave this on.
+  enabled: true
+  font_size: 54
+  primary_color: "&H00FFFFFF"   # ASS format: &HAABBGGRR (not RGB)
+  outline_color: "&H00000000"
+  outline: 3
+  # Vertical position as a fraction of frame height. 0.62 sits above the
+  # bottom UI overlay. The safe-zone check will warn if you push it too low.
+  position: 0.62
+
+originality:
+  # ---- This section is what keeps the channel monetizable. ----
+  # YouTube's inauthentic-content policy judges channels, not videos:
+  # templated, repetitive output gets the whole channel demonetized.
+  # These settings force each video to differ from recent ones.
+
+  # How many past videos to compare against when rejecting repeats.
+  lookback: 25
+  # 0.0-1.0. Lower = stricter. A new script above this similarity to any
+  # recent one is thrown away and regenerated.
+  max_similarity: 0.55
+  # Retries before giving up and asking you for a new angle.
+  max_regenerations: 4
+  # Rotate structure deliberately rather than reusing one winning shape.
+  rotate_structures: true
+
+publish:
+  # Uploads land here. Leave as 'private' until you've watched a few.
+  privacy: "private"          # private | unlisted | public
+  category_id: "27"           # 27 = Education. 24 = Entertainment. 28 = Sci/Tech.
+  # Sets status.containsSyntheticMedia on upload. Required by YouTube's
+  # disclosure policy for realistic AI-generated scenes. Leave this true.
+  disclose_synthetic: true
+  made_for_kids: false
+
+review:
+  # Builds a local page and waits for your approval before uploading.
+  # Turning this off is how channels get themselves banned. Leave it on.
+  required: true
